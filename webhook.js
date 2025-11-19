@@ -1,54 +1,69 @@
+// webhook.js
 import fetch from "node-fetch";
-import { initializeApp } from "firebase/app";
-import { getDatabase, ref, onValue } from "firebase/database";
+import firebase from "firebase/compat/app";
+import "firebase/compat/database";
 
-// config do Firebase
-const firebaseConfig = {
-  apiKey: "AIzaSyCPy0-8bD-2ckURSFqC5LaapjfuwfYQX1Y",
-  authDomain: "servidorglobal-51830.firebaseapp.com",
-  databaseURL: "https://servidorglobal-51830-default-rtdb.firebaseio.com",
-  projectId: "servidorglobal-51830",
-  storageBucket: "servidorglobal-51830.firebasestorage.app",
-  messagingSenderId: "531403003084",
-  appId: "1:531403003084:web:bd981d24202df6b79f5e69"
-};
+const {
+  FIREBASE_API_KEY,
+  FIREBASE_AUTH_DOMAIN,
+  FIREBASE_DATABASE_URL,
+  FIREBASE_PROJECT_ID,
+  FIREBASE_STORAGE_BUCKET,
+  FIREBASE_MESSAGING_SENDER_ID,
+  FIREBASE_APP_ID,
+  WEBHOOK_URL,
+  INTERVAL_MS
+} = process.env;
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
-const webhookURL = process.env.WEBHOOK_URL; // você vai colocar isso no Render
-
-// Função para enviar mensagem ao Discord
-async function sendMessage(text) {
-  await fetch(webhookURL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      content: text
-    })
-  });
+if (!WEBHOOK_URL) {
+  console.error("ERRO: WEBHOOK_URL não configurado nas env vars.");
+  process.exit(1);
 }
 
-// Listener em tempo real
-const playersRef = ref(db, "players");
+const firebaseConfig = {
+  apiKey: FIREBASE_API_KEY,
+  authDomain: FIREBASE_AUTH_DOMAIN,
+  databaseURL: FIREBASE_DATABASE_URL,
+  projectId: FIREBASE_PROJECT_ID,
+  storageBucket: FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: FIREBASE_MESSAGING_SENDER_ID,
+  appId: FIREBASE_APP_ID
+};
 
-onValue(playersRef, snapshot => {
-  const data = snapshot.val();
-  if (!data) return;
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
-  // pega todos os players
-  const list = Object.values(data);
+async function enviarRanking() {
+  try {
+    const snapshot = await db.ref('players').once('value');
+    const players = snapshot.val();
+    if (!players) return;
 
-  // pega top 1
-  const top = list.sort((a, b) => b.score - a.score)[0];
+    const topPlayers = Object.keys(players)
+      .map(user => ({ user, score: players[user].score || 0 }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
 
-  sendMessage(`🏆 **Top Player Atualizado**  
-👤 Usuário: **${top.name}**  
-⭐ Score: **${top.score}**  
-⏰ Atualizado agora!`);
-});
+    const mensagem = topPlayers.map((p, i) => `${i+1}. **${p.user}** - ${p.score} pts`).join("\n");
 
-// Mantém o processo vivo
-setInterval(() => {
-  console.log("Webhook rodando...");
-}, 60000);
+    await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: `📊 **Ranking Atualizado**:\n${mensagem}` })
+    });
+
+    console.log("Ranking enviado:", new Date().toISOString());
+  } catch (err) {
+    console.error("Erro ao enviar ranking:", err);
+  }
+}
+
+// Intervalo — padrão 1 minuto se não setado
+const intervalo = parseInt(INTERVAL_MS || "60000", 10);
+
+// Envia imediatamente e depois em loop
+enviarRanking();
+setInterval(enviarRanking, intervalo);
+
+// Mantém o processo vivo (logs periódicos)
+setInterval(() => console.log("Webhook rodando..."), 60000);
