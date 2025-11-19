@@ -1,0 +1,13 @@
+{
+  "name": "webhook-server",
+  "version": "1.0.0",
+  "main": "webhook.js",
+  "type": "module",
+  "scripts": {
+    "start": "node webhook.js"
+  },
+  "dependencies": {
+    "firebase": "^12.6.0",
+    "node-fetch": "^3.3.2"
+  }
+}
